@@ -203,6 +203,7 @@ ol.tl{list-style:none;margin:0;padding:0 0 0 6px}ol.tl li{display:flex;gap:12px;
 .tc.leaving .tc-top,.tc.leaving .tc-links,.tc.leaving .tc-form,.tc.leaving .tc-copy,.tc.leaving .tc-home,.tc.leaving .tc-info{opacity:0;transform:translateY(10px);transition:opacity .3s ease,transform .3s ease;pointer-events:none}
 .portal-fx{position:fixed;inset:0;z-index:70;pointer-events:none;opacity:0;clip-path:circle(0px at 50% 50%);background:#050B1F}
 .portal-fx canvas{display:block;width:100%;height:100%}
+.portal-fx.gl{background:none;clip-path:none;opacity:1}
 .portal-tag{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;color:#fff;font:600 12px/1.3 var(--font);letter-spacing:.3em;text-transform:uppercase;opacity:0;text-shadow:0 2px 24px rgba(5,11,31,.8)}
 .portal-tag b{display:block;margin-top:10px;font:700 clamp(30px,6.5vw,58px)/1.05 var(--font);letter-spacing:.01em;text-transform:none}
 .portal-flash{position:fixed;inset:0;z-index:80;background:var(--ground);opacity:0;pointer-events:none}
@@ -1164,7 +1165,7 @@ function loadThree(cb){
   s.onload=function(){var q=loadThree.q;loadThree.q=[];q.forEach(function(f){try{f();}catch(e){}});};
   s.onerror=function(){loadThree.started=false;};document.head.appendChild(s);
 }
-function stopGL(){if(!GL)return;cancelAnimationFrame(GL.raf);try{GL.geo.dispose();GL.mat.dispose();GL.env&&GL.env.dispose();GL.renderer.dispose();}catch(e){}GL=null;}
+function stopGL(){if(!GL)return;cancelAnimationFrame(GL.raf);try{GL.portalEnd&&GL.portalEnd();GL.geo.dispose();GL.mat.dispose();GL.env&&GL.env.dispose();GL.renderer.dispose();}catch(e){}GL=null;}
 function startGL(){
   var stage=document.querySelector('.tc-stage');if(!stage||!window.THREE||GL)return;
   var T=window.THREE,box=document.createElement('div');box.className='gl3d';box.setAttribute('aria-hidden','true');stage.appendChild(box);
@@ -1211,26 +1212,64 @@ function startGL(){
   var end=function(){drag=false;};box.onpointerup=end;box.onpointercancel=end;
   GL={renderer:renderer,geo:geo,mat:mat,env:envRT,raf:0,size:size,box:box,q:q};
   window.addEventListener('resize',function(){if(GL&&!GL.portalOn)GL.size();});
-  /* sign-in portal: the canvas goes full screen with the same view, the logo turns to face you, then the camera
-     travels along the ray through the o's counter, so the o stays put on screen and grows until you pass through it */
-  var qF=new T.Quaternion(),oL=new T.Vector3(PORTAL_O.x-gc.x,PORTAL_O.y-gc.y,depth+bev-gc.z),oW=new T.Vector3(),eW=new T.Vector3(),pt={x:0,y:0};
-  GL.portalStart=function(){
+  /* sign-in portal, one continuous 3D shot: the canvas goes full screen with the same view, the logo turns to face you,
+     and a tunnel is built behind the o's counter (the letters hide all of it except what shows through the o).
+     The camera flies through the o, swings round to face down the tunnel, speeds up and comes out into the light. */
+  var qF=new T.Quaternion(),oL=new T.Vector3(PORTAL_O.x-gc.x,PORTAL_O.y-gc.y,depth+bev-gc.z),PT=null;
+  var TUNNEL_VS='varying vec2 vU;void main(){vU=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}';
+  var TUNNEL_FS=['uniform float t,speed,glow;uniform vec3 acc;varying vec2 vU;',
+    'float h(float n){return fract(sin(n)*43758.5453);}',
+    'void main(){float f=1.-vU.y,a=vU.x*6.2831853;',
+    ' float ring=pow(abs(sin((f*70.-t*speed)*3.14159)),40.);',
+    ' float spiral=pow(abs(sin((vU.x*10.+f*36.-t*speed*.45)*3.14159)),22.);',
+    ' float lane=floor(vU.x*150.),lp=1.-abs(fract(vU.x*150.)-.5)*2.,streak=step(.84,h(lane))*lp*lp*pow(fract(t*speed*.22+h(lane+3.)-f*9.),9.);',
+    ' vec3 deep=mix(vec3(.012,.025,.08),vec3(.10,.17,.42),.5+.5*sin(a*3.+f*14.-t*1.7));',
+    ' vec3 col=deep+acc*(ring*.75+streak*1.6)+vec3(.30,.45,1.)*spiral*.55;',
+    ' col*=.35+.65*smoothstep(0.,.08,f);',
+    ' col=mix(col,vec3(1.),smoothstep(.45,1.,f));',
+    ' gl_FragColor=vec4(mix(col,vec3(1.),glow),1.);}'].join('\n');
+  GL.portalStart=function(accent){
     var r=box.getBoundingClientRect(),vw=window.innerWidth,vh=window.innerHeight;
     GL.portalOn=true;drag=false;box.classList.add('portal');box.style.width=vw+'px';box.style.height=vh+'px';renderer.setSize(vw,vh,false);
-    cam.aspect=r.width/r.height;cam.setViewOffset(r.width,r.height,-r.left,-r.top,vw,vh);cam.updateProjectionMatrix();
-    GL.p0={q:q.clone(),c:cam.position.clone(),vw:vw,vh:vh};
+    var p={q:q.clone(),c:cam.position.clone(),cq:cam.quaternion.clone(),fov:cam.fov,vw:vw,vh:vh,bw:r.width,bh:r.height,bx:r.left,by:r.top};
+    /* where the o will be once the logo faces you */
+    pivot.quaternion.copy(qF);pivot.updateMatrixWorld(true);p.o=mesh.localToWorld(oL.clone());pivot.quaternion.copy(q);pivot.updateMatrixWorld(true);
+    p.dir=p.o.clone().sub(p.c);p.d0=p.dir.length();p.dir.normalize();
+    p.L=1400;p.end=p.d0+p.L*0.9;
+    p.look=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().lookAt(p.c,p.o,new T.Vector3(0,1,0)));
+    /* the tunnel: open tube the size of the counter, mouth at the o, running away from the camera */
+    var col=new T.Color('rgb('+accent.join(',')+')');
+    p.mat=new T.ShaderMaterial({side:T.BackSide,uniforms:{t:{value:0},speed:{value:.6},glow:{value:0},acc:{value:col}},vertexShader:TUNNEL_VS,fragmentShader:TUNNEL_FS});
+    p.tube=new T.Mesh(new T.CylinderGeometry(PORTAL_O.r,PORTAL_O.r,p.L,96,1,true),p.mat);
+    p.tube.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),p.dir.clone().negate());
+    p.tube.position.copy(p.o).addScaledVector(p.dir,p.L/2+bev);scene.add(p.tube);
+    /* sparks rushing past inside the tunnel */
+    var n=700,pos=new Float32Array(n*3);for(var i=0;i<n;i++){var a=Math.random()*6.2832,rr=PORTAL_O.r*(0.35+0.6*Math.random());pos[i*3]=Math.cos(a)*rr;pos[i*3+1]=(Math.random()-.5)*p.L;pos[i*3+2]=Math.sin(a)*rr;}
+    p.sparkGeo=new T.BufferGeometry();p.sparkGeo.setAttribute('position',new T.BufferAttribute(pos,3));
+    var dot=document.createElement('canvas');dot.width=dot.height=64;var dc=dot.getContext('2d'),dg=dc.createRadialGradient(32,32,0,32,32,32);dg.addColorStop(0,'rgba(255,255,255,1)');dg.addColorStop(.3,'rgba(255,255,255,.55)');dg.addColorStop(1,'rgba(255,255,255,0)');dc.fillStyle=dg;dc.fillRect(0,0,64,64);p.dot=new T.CanvasTexture(dot);
+    p.sparkMat=new T.PointsMaterial({map:p.dot,color:col.clone().lerp(new T.Color(0xffffff),.45),size:.45,sizeAttenuation:true,transparent:true,opacity:0,blending:T.AdditiveBlending,depthWrite:false});
+    p.sparks=new T.Points(p.sparkGeo,p.sparkMat);p.tube.add(p.sparks);
+    p.last=0;GL.p0=p;
   };
+  var sm=function(a,b,x){x=Math.max(0,Math.min(1,(x-a)/(b-a)));return x*x*(3-2*x);};
   GL.portalStep=function(t){
-    var p=GL.p0,a=Math.min(1,t/450),ea=a<.5?2*a*a:1-Math.pow(2-2*a,2)/2;
-    q.copy(p.q).slerp(qF,ea);pivot.quaternion.copy(q);pivot.updateMatrixWorld(true);
-    oW.copy(oL);mesh.localToWorld(oW);
-    var d=Math.max(0,Math.min(1,(t-300)/1150)),s=Math.pow(d,2.4)*1.25;
-    floor.material.opacity=0.09*(1-Math.min(1,d*2.5));cam.position.copy(p.c).lerp(oW,s);renderer.render(scene,cam);
-    if(s>=0.97)return {x:pt.x,y:pt.y,r:1e5};
-    eW.copy(oW).project(cam);pt.x=(eW.x+1)/2*p.vw;pt.y=(1-eW.y)/2*p.vh;
-    eW.set(PORTAL_O.r,0,0).applyQuaternion(cam.quaternion).add(oW).project(cam);
-    return {x:pt.x,y:pt.y,r:Math.hypot((eW.x+1)/2*p.vw-pt.x,(1-eW.y)/2*p.vh-pt.y)};
+    var p=GL.p0,dt=Math.min(.05,(t-p.last)/1000);p.last=t;
+    var a=Math.min(1,t/450),ea=a<.5?2*a*a:1-Math.pow(2-2*a,2)/2;
+    q.copy(p.q).slerp(qF,ea);pivot.quaternion.copy(q);
+    /* the ride: slow pull, then sucked in; ratio 1 = at the mouth of the o */
+    var d=Math.max(0,Math.min(1,(t-450)/1850)),trav=Math.pow(d,2.2)*p.end,ratio=trav/p.d0;
+    cam.position.copy(p.c).addScaledVector(p.dir,trav);
+    /* entering the o: turn to look straight down the tunnel and widen the lens for speed */
+    var k=sm(.82,1.04,ratio);cam.quaternion.copy(p.cq).slerp(p.look,k);
+    var fw=p.bw+(p.vw-p.bw)*k,fh=p.bh+(p.vh-p.bh)*k;cam.aspect=fw/fh;cam.setViewOffset(fw,fh,-p.bx*(1-k),-p.by*(1-k),p.vw,p.vh);
+    cam.fov=p.fov+42*sm(1,2.2,ratio);cam.updateProjectionMatrix();
+    floor.material.opacity=0.09*(1-sm(0,.5,ratio));
+    var sp=.6+5.5*d*d;p.mat.uniforms.t.value=t/1000;p.mat.uniforms.speed.value=sp;p.mat.uniforms.glow.value=sm(2150,2400,t);
+    var at=p.sparkGeo.attributes.position,arr=at.array,mv=dt*(40+900*d*d);
+    for(var i=1;i<arr.length;i+=3){arr[i]+=mv;if(arr[i]>p.L/2)arr[i]-=p.L;}at.needsUpdate=true;p.sparkMat.opacity=sm(.6,1,ratio)*.9;
+    renderer.render(scene,cam);
   };
+  GL.portalEnd=function(){var p=GL.p0;if(!p)return;scene.remove(p.tube);p.tube.geometry.dispose();p.mat.dispose();p.sparkGeo.dispose();p.sparkMat.dispose();p.dot.dispose();GL.p0=null;};
   var first=true;
   var frame=function(){
     if(!GL||!document.body.contains(box)){stopGL();return;}
@@ -1373,20 +1412,23 @@ const Portal={busy:false,
   Portal.busy=true;clearInterval(CLOCK);CLOCK=null;
   if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches){stopGL();arrive();Portal.busy=false;return;}
   const tc=$('.tc');if(tc)tc.classList.add('leaving');if(document.activeElement)document.activeElement.blur();
-  let step=null;if(GL&&GL.portalStart){GL.portalStart();step=GL.portalStep;}else step=cssPortal();
-  const ov=document.createElement('div'),fl=document.createElement('div');ov.className='portal-fx';fl.className='portal-flash';ov.setAttribute('aria-hidden','true');fl.setAttribute('aria-hidden','true');
-  ov.innerHTML='<canvas></canvas><div class="portal-tag">Welcome'+(kind==='team'?' back':'')+', '+esc(u.name.split(' ')[0])+'<b>'+R.tag+'</b></div>';
+  const gl=!!(GL&&GL.portalStart),step=gl?null:cssPortal();if(gl)GL.portalStart(R.accent);
+  /* 3D: the tunnel lives in the WebGL scene, so only the title and the final flash are overlays; flat: a 2D tunnel shows through the o */
+  const TL=gl?{tagIn:1650,tagOut:2150,flash:2250,land:2520}:{tagIn:850,tagOut:1650,flash:1700,land:1980};
+  const ov=document.createElement('div'),fl=document.createElement('div');ov.className='portal-fx'+(gl?' gl':'');fl.className='portal-flash';ov.setAttribute('aria-hidden','true');fl.setAttribute('aria-hidden','true');
+  ov.innerHTML=(gl?'':'<canvas></canvas>')+'<div class="portal-tag">Welcome'+(kind==='team'?' back':'')+', '+esc(u.name.split(' ')[0])+'<b>'+R.tag+'</b></div>';
   document.body.append(ov,fl);
-  const draw=Tunnel(ov.firstChild,R.accent),tag=ov.lastChild,W=innerWidth,H=innerHeight,T0=performance.now(),ease=x=>x<=0?0:x>=1?1:x*x*(3-2*x);
+  const draw=gl?null:Tunnel(ov.firstChild,R.accent),tag=ov.lastChild,W=innerWidth,H=innerHeight,T0=performance.now(),ease=x=>x<=0?0:x>=1?1:x*x*(3-2*x);
   let last=T0,ox=W/2,oy=H/3,orad=0,landed=false;
   const frame=now=>{const t=now-T0,dt=Math.min(50,now-last);last=now;
-   if(step){const o=step(t);if(o){if(o.r<1e4){ox=o.x;oy=o.y;}orad=o.r;}}else orad=Math.hypot(W,H)*ease((t-200)/900);
-   ov.style.opacity=ease((t-100)/300);
-   ov.style.clipPath='circle('+Math.min(orad,Math.hypot(W,H)).toFixed(1)+'px at '+ox.toFixed(1)+'px '+oy.toFixed(1)+'px)';
-   const m=ease((t-900)/700);draw(t,dt,ox+(W/2-ox)*m,oy+(H/2-oy)*m);
-   tag.style.opacity=ease((t-850)/350)*(1-ease((t-1650)/250));tag.style.transform='translateY(-50%) scale('+(0.9+0.1*ease((t-850)/900)).toFixed(3)+')';
-   fl.style.opacity=ease((t-1700)/260);
-   if(t<1980){requestAnimationFrame(frame);return;}
+   if(gl){if(GL)GL.portalStep(t);}
+   else{if(step){const o=step(t);if(o){if(o.r<1e4){ox=o.x;oy=o.y;}orad=o.r;}}else orad=Math.hypot(W,H)*ease((t-200)/900);
+    ov.style.opacity=ease((t-100)/300);
+    ov.style.clipPath='circle('+Math.min(orad,Math.hypot(W,H)).toFixed(1)+'px at '+ox.toFixed(1)+'px '+oy.toFixed(1)+'px)';
+    const m=ease((t-900)/700);draw(t,dt,ox+(W/2-ox)*m,oy+(H/2-oy)*m);}
+   tag.style.opacity=ease((t-TL.tagIn)/350)*(1-ease((t-TL.tagOut)/250));tag.style.transform='translateY(-50%) scale('+(0.9+0.1*ease((t-TL.tagIn)/900)).toFixed(3)+')';
+   fl.style.opacity=ease((t-TL.flash)/260);
+   if(t<TL.land){requestAnimationFrame(frame);return;}
    if(landed)return;landed=true;stopGL();arrive();ov.remove();
    document.documentElement.classList.add('portal-arrive');fl.style.transition='opacity .5s ease';
    requestAnimationFrame(()=>{fl.style.opacity=0;});
