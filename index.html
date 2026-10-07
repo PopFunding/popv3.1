@@ -198,17 +198,12 @@ ol.tl{list-style:none;margin:0;padding:0 0 0 6px}ol.tl li{display:flex;gap:12px;
 .gl3d{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);touch-action:none;cursor:grab;opacity:0;transition:opacity .45s ease}
 .gl3d.on{opacity:1}
 
-/* sign-in portal: the camera dives through the o of the logo into the user's workspace */
+/* sign-in portal: the camera pushes into the o of the logo, and the user's own workspace shows through it */
 .gl3d.portal{position:fixed;left:0;top:0;transform:none;z-index:60;pointer-events:none;opacity:1;transition:none}
-.tc.leaving .tc-top,.tc.leaving .tc-links,.tc.leaving .tc-form,.tc.leaving .tc-copy,.tc.leaving .tc-home,.tc.leaving .tc-info{opacity:0;transform:translateY(10px);transition:opacity .3s ease,transform .3s ease;pointer-events:none}
-.portal-fx{position:fixed;inset:0;z-index:70;pointer-events:none;opacity:0;clip-path:circle(0px at 50% 50%);background:#050B1F}
-.portal-fx canvas{display:block;width:100%;height:100%}
-.portal-fx.gl{background:none;clip-path:none;opacity:1}
-.portal-tag{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;color:#fff;font:600 12px/1.3 var(--font);letter-spacing:.3em;text-transform:uppercase;opacity:0;text-shadow:0 2px 24px rgba(5,11,31,.8)}
-.portal-tag b{display:block;margin-top:10px;font:700 clamp(30px,6.5vw,58px)/1.05 var(--font);letter-spacing:.01em;text-transform:none}
-.portal-flash{position:fixed;inset:0;z-index:80;background:var(--ground);opacity:0;pointer-events:none}
-.portal-arrive #app{animation:portalArrive .75s cubic-bezier(.2,.7,.2,1)}
-@keyframes portalArrive{from{opacity:0;transform:scale(1.05);filter:blur(10px)}to{opacity:1;transform:none;filter:none}}
+.tc.leaving .tc-top,.tc.leaving .tc-links,.tc.leaving .tc-form,.tc.leaving .tc-copy,.tc.leaving .tc-home,.tc.leaving .tc-info{opacity:0;transform:translateY(10px);transition:opacity .25s ease,transform .25s ease;pointer-events:none}
+.portal-flat{position:fixed;inset:0;z-index:60;pointer-events:none}
+.portal-flat .spin{position:fixed;margin:0}
+.portal-app{will-change:transform}
 .gl3d:active{cursor:grabbing}
 .gl3d canvas{display:block;width:100%;height:100%}
 
@@ -1212,64 +1207,31 @@ function startGL(){
   var end=function(){drag=false;};box.onpointerup=end;box.onpointercancel=end;
   GL={renderer:renderer,geo:geo,mat:mat,env:envRT,raf:0,size:size,box:box,q:q};
   window.addEventListener('resize',function(){if(GL&&!GL.portalOn)GL.size();});
-  /* sign-in portal, one continuous 3D shot: the canvas goes full screen with the same view, the logo turns to face you,
-     and a tunnel is built behind the o's counter (the letters hide all of it except what shows through the o).
-     The camera flies through the o, swings round to face down the tunnel, speeds up and comes out into the light. */
-  var qF=new T.Quaternion(),oL=new T.Vector3(PORTAL_O.x-gc.x,PORTAL_O.y-gc.y,depth+bev-gc.z),PT=null;
-  var TUNNEL_VS='varying vec2 vU;void main(){vU=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}';
-  var TUNNEL_FS=['uniform float t,speed,glow;uniform vec3 acc;varying vec2 vU;',
-    'float h(float n){return fract(sin(n)*43758.5453);}',
-    'void main(){float f=1.-vU.y,a=vU.x*6.2831853;',
-    ' float ring=pow(abs(sin((f*70.-t*speed)*3.14159)),40.);',
-    ' float spiral=pow(abs(sin((vU.x*10.+f*36.-t*speed*.45)*3.14159)),22.);',
-    ' float lane=floor(vU.x*150.),lp=1.-abs(fract(vU.x*150.)-.5)*2.,streak=step(.84,h(lane))*lp*lp*pow(fract(t*speed*.22+h(lane+3.)-f*9.),9.);',
-    ' vec3 deep=mix(vec3(.012,.025,.08),vec3(.10,.17,.42),.5+.5*sin(a*3.+f*14.-t*1.7));',
-    ' vec3 col=deep+acc*(ring*.75+streak*1.6)+vec3(.30,.45,1.)*spiral*.55;',
-    ' col*=.35+.65*smoothstep(0.,.08,f);',
-    ' col=mix(col,vec3(1.),smoothstep(.45,1.,f));',
-    ' gl_FragColor=vec4(mix(col,vec3(1.),glow),1.);}'].join('\n');
-  GL.portalStart=function(accent){
+  /* sign-in portal: the canvas goes full screen with the same view. Once the form has faded it paints the white page
+     itself, and a disc behind the o's counter punches a transparent window through it (the letters hide all of the disc
+     except what shows through the o), so the user's workspace, already rendered underneath, is seen through the o.
+     The camera flies in through the o, towards the window, until the window is the screen. */
+  var qF=new T.Quaternion(),pv=new T.Vector3();
+  GL.portalStart=function(){
     var r=box.getBoundingClientRect(),vw=window.innerWidth,vh=window.innerHeight;
-    GL.portalOn=true;drag=false;box.classList.add('portal');box.style.width=vw+'px';box.style.height=vh+'px';renderer.setSize(vw,vh,false);
-    var p={q:q.clone(),c:cam.position.clone(),cq:cam.quaternion.clone(),fov:cam.fov,vw:vw,vh:vh,bw:r.width,bh:r.height,bx:r.left,by:r.top};
-    /* where the o will be once the logo faces you */
-    pivot.quaternion.copy(qF);pivot.updateMatrixWorld(true);p.o=mesh.localToWorld(oL.clone());pivot.quaternion.copy(q);pivot.updateMatrixWorld(true);
+    GL.portalOn=true;drag=false;document.body.appendChild(box);box.classList.add('portal');box.style.width=vw+'px';box.style.height=vh+'px';renderer.setSize(vw,vh,false);
+    cam.aspect=r.width/r.height;cam.setViewOffset(r.width,r.height,-r.left,-r.top,vw,vh);cam.updateProjectionMatrix();
+    var p={q:q.clone(),c:cam.position.clone(),vw:vw,vh:vh};
+    pivot.quaternion.copy(qF);pivot.updateMatrixWorld(true);p.o=mesh.localToWorld(new T.Vector3(PORTAL_O.x-gc.x,PORTAL_O.y-gc.y,-gc.z));pivot.quaternion.copy(q);pivot.updateMatrixWorld(true);
     p.dir=p.o.clone().sub(p.c);p.d0=p.dir.length();p.dir.normalize();
-    p.L=1400;p.end=p.d0+p.L*0.9;
-    p.look=new T.Quaternion().setFromRotationMatrix(new T.Matrix4().lookAt(p.c,p.o,new T.Vector3(0,1,0)));
-    /* the tunnel: open tube the size of the counter, mouth at the o, running away from the camera */
-    var col=new T.Color('rgb('+accent.join(',')+')');
-    p.mat=new T.ShaderMaterial({side:T.BackSide,uniforms:{t:{value:0},speed:{value:.6},glow:{value:0},acc:{value:col}},vertexShader:TUNNEL_VS,fragmentShader:TUNNEL_FS});
-    p.tube=new T.Mesh(new T.CylinderGeometry(PORTAL_O.r,PORTAL_O.r,p.L,96,1,true),p.mat);
-    p.tube.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),p.dir.clone().negate());
-    p.tube.position.copy(p.o).addScaledVector(p.dir,p.L/2+bev);scene.add(p.tube);
-    /* sparks rushing past inside the tunnel */
-    var n=700,pos=new Float32Array(n*3);for(var i=0;i<n;i++){var a=Math.random()*6.2832,rr=PORTAL_O.r*(0.35+0.6*Math.random());pos[i*3]=Math.cos(a)*rr;pos[i*3+1]=(Math.random()-.5)*p.L;pos[i*3+2]=Math.sin(a)*rr;}
-    p.sparkGeo=new T.BufferGeometry();p.sparkGeo.setAttribute('position',new T.BufferAttribute(pos,3));
-    var dot=document.createElement('canvas');dot.width=dot.height=64;var dc=dot.getContext('2d'),dg=dc.createRadialGradient(32,32,0,32,32,32);dg.addColorStop(0,'rgba(255,255,255,1)');dg.addColorStop(.3,'rgba(255,255,255,.55)');dg.addColorStop(1,'rgba(255,255,255,0)');dc.fillStyle=dg;dc.fillRect(0,0,64,64);p.dot=new T.CanvasTexture(dot);
-    p.sparkMat=new T.PointsMaterial({map:p.dot,color:col.clone().lerp(new T.Color(0xffffff),.45),size:.45,sizeAttenuation:true,transparent:true,opacity:0,blending:T.AdditiveBlending,depthWrite:false});
-    p.sparks=new T.Points(p.sparkGeo,p.sparkMat);p.tube.add(p.sparks);
-    p.last=0;GL.p0=p;
+    p.win=new T.Mesh(new T.CircleGeometry(PORTAL_O.win,64),new T.MeshBasicMaterial({color:0,transparent:true,opacity:0,blending:T.NoBlending,side:T.DoubleSide,depthWrite:false}));
+    p.win.position.set(PORTAL_O.x-gc.x,PORTAL_O.y-gc.y,-gc.z);p.win.renderOrder=2;mesh.add(p.win);
+    GL.p0=p;
   };
-  var sm=function(a,b,x){x=Math.max(0,Math.min(1,(x-a)/(b-a)));return x*x*(3-2*x);};
-  GL.portalStep=function(t){
-    var p=GL.p0,dt=Math.min(.05,(t-p.last)/1000);p.last=t;
-    var a=Math.min(1,t/450),ea=a<.5?2*a*a:1-Math.pow(2-2*a,2)/2;
-    q.copy(p.q).slerp(qF,ea);pivot.quaternion.copy(q);
-    /* the ride: slow pull, then sucked in; ratio 1 = at the mouth of the o */
-    var d=Math.max(0,Math.min(1,(t-450)/1850)),trav=Math.pow(d,2.2)*p.end,ratio=trav/p.d0;
-    cam.position.copy(p.c).addScaledVector(p.dir,trav);
-    /* entering the o: turn to look straight down the tunnel and widen the lens for speed */
-    var k=sm(.82,1.04,ratio);cam.quaternion.copy(p.cq).slerp(p.look,k);
-    var fw=p.bw+(p.vw-p.bw)*k,fh=p.bh+(p.vh-p.bh)*k;cam.aspect=fw/fh;cam.setViewOffset(fw,fh,-p.bx*(1-k),-p.by*(1-k),p.vw,p.vh);
-    cam.fov=p.fov+42*sm(1,2.2,ratio);cam.updateProjectionMatrix();
-    floor.material.opacity=0.09*(1-sm(0,.5,ratio));
-    var sp=.6+5.5*d*d;p.mat.uniforms.t.value=t/1000;p.mat.uniforms.speed.value=sp;p.mat.uniforms.glow.value=sm(2150,2400,t);
-    var at=p.sparkGeo.attributes.position,arr=at.array,mv=dt*(40+900*d*d);
-    for(var i=1;i<arr.length;i+=3){arr[i]+=mv;if(arr[i]>p.L/2)arr[i]-=p.L;}at.needsUpdate=true;p.sparkMat.opacity=sm(.6,1,ratio)*.9;
+  GL.portalOpaque=function(){renderer.setClearColor(0xffffff,1);};
+  GL.portalStep=function(t,e){
+    var p=GL.p0,a=Math.max(0,Math.min(1,t/380));a=a*a*(3-2*a);q.copy(p.q).slerp(qF,a);pivot.quaternion.copy(q);
+    cam.position.copy(p.c).addScaledVector(p.dir,p.d0-p.d0*Math.pow(3/p.d0,e));   /* distance shrinks geometrically: a steady, accelerating zoom */floor.material.opacity=0.09*(1-Math.min(1,e*4));
     renderer.render(scene,cam);
+    pv.copy(p.win.position);mesh.localToWorld(pv);pv.project(cam);
+    return {x:(pv.x+1)/2*p.vw,y:(1-pv.y)/2*p.vh};
   };
-  GL.portalEnd=function(){var p=GL.p0;if(!p)return;scene.remove(p.tube);p.tube.geometry.dispose();p.mat.dispose();p.sparkGeo.dispose();p.sparkMat.dispose();p.dot.dispose();GL.p0=null;};
+  GL.portalEnd=function(){var p=GL.p0;box.remove();if(!p)return;mesh.remove(p.win);p.win.geometry.dispose();p.win.material.dispose();GL.p0=null;};
   var first=true;
   var frame=function(){
     if(!GL||!document.body.contains(box)){stopGL();return;}
@@ -1378,61 +1340,37 @@ document.addEventListener('keydown',e=>{if(!App.user||App.user.role==='customer'
 function showShortcuts(){UI.modal('Keyboard shortcuts','<table class="mini">'+[['/ or ⌘K','Search everything'],['?','This list'],['g then d','Dashboard'],['g then l','Leads'],['g then a','Applications'],['g then p','Pipeline'],['g then u','Underwriting'],['g then f','Funding'],['g then m','Merchants'],['g then c','Collections'],['g then t','Tasks'],['g then r','Reports'],['n','New lead'],['Esc','Close dialog']].map(x=>'<tr><td><kbd>'+x[0]+'</kbd></td><td>'+x[1]+'</td></tr>').join('')+'</table>',[{label:'Close',run:()=>true}]);}
 
 /* ---------- sign-in (3D logo stage, team / broker / customer) ---------- */
-/* ---------- sign-in portal: through the o of the logo, down a tunnel, into the user's own workspace ---------- */
-const PORTAL_O={x:-12.3,y:-3.7,r:10.5};          /* the o's counter in logo units (POPV): centre and a radius that stays inside it */
-const PORTAL_ROLE={team:{tag:'POP OS',accent:[90,200,250]},broker:{tag:'Broker Portal',accent:[245,184,65]},customer:{tag:'Customer Portal',accent:[52,211,153]}};
-/* no WebGL: the flat logo turns to face you and zooms into the o (same fractions of the logo box) */
-function cssPortal(){const w=$('#spin'),tile=$('#tile');if(!w||!tile)return null;cancelAnimationFrame(SPIN);
- tile.style.transition='transform .45s cubic-bezier(.3,.7,.2,1)';tile.style.transform='none';
- const b=w.getBoundingClientRect(),fx=0.428,fy=0.534,ox=b.left+b.width*fx,oy=b.top+b.height*fy,r0=b.width*0.066,max=Math.hypot(innerWidth,innerHeight)*1.2/r0;
- w.style.transformOrigin=(b.width*fx)+'px '+(b.height*fy)+'px';
- return t=>{const d=Math.max(0,Math.min(1,(t-300)/1150)),k=Math.min(max,1/Math.max(1e-3,1-Math.pow(d,2.4)));w.style.transform='scale('+k.toFixed(3)+')';return{x:ox,y:oy,r:r0*k};};}
-/* the tunnel: the o repeated into the distance, light streaks swirling past, a light at the end that becomes the app */
-function Tunnel(cv,accent){const ctx=cv.getContext('2d'),A=accent.join(','),dpr=Math.min(2,window.devicePixelRatio||1),W=innerWidth,H=innerHeight;
- cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
- const P=Array.from({length:320},()=>({a:Math.random()*6.2832,z:Math.random(),l:0.5+Math.random()}));let phase=0;
- return function(t,dt,cx,cy){
-  const k=Math.max(0,Math.min(1,(t-250)/1500)),v=0.25+2.6*k*k,F=Math.max(W,H)*0.09,sec=dt/1000;phase+=sec*v;
-  ctx.globalCompositeOperation='source-over';ctx.fillStyle='#050B1F';ctx.fillRect(0,0,W,H);
-  let g=ctx.createRadialGradient(cx,cy,0,cx,cy,F*5);g.addColorStop(0,'rgba('+A+',.5)');g.addColorStop(.35,'rgba(39,65,137,.4)');g.addColorStop(1,'rgba(5,11,31,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
-  ctx.globalCompositeOperation='lighter';
-  for(let i=0,N=16;i<N;i++){const z=1-((i/N+phase*0.55)%1);if(z<0.03)continue;const rad=F/z,al=Math.min(1,(1-z)*1.6)*Math.min(1,z*5)*0.55;
-   ctx.strokeStyle=i%2?'rgba('+A+','+al+')':'rgba(110,140,255,'+(al*0.8)+')';ctx.lineWidth=Math.max(1,(1-z)*9);
-   ctx.beginPath();ctx.ellipse(cx,cy,rad,rad*0.94,phase*1.5+i*0.4,0,6.2832);ctx.stroke();}
-  for(const p of P){p.z-=sec*v*0.9;p.a+=sec*(0.5+1.5*(1-p.z))*0.8;if(p.z<=0.02){p.z=1;p.a=Math.random()*6.2832;}
-   const z2=Math.min(1,p.z+0.02+0.09*k*p.l),r1=F*1.6/p.z,r2=F*1.6/z2,c=Math.cos(p.a),s=Math.sin(p.a);
-   ctx.strokeStyle='rgba('+(p.l>1.2?'255,255,255':A)+','+((1-p.z)*0.9)+')';ctx.lineWidth=Math.max(0.6,(1-p.z)*2.4);
-   ctx.beginPath();ctx.moveTo(cx+c*r2,cy+s*r2);ctx.lineTo(cx+c*r1,cy+s*r1);ctx.stroke();}
-  const e=Math.max(0,Math.min(1,(t-1450)/500)),core=F*(0.6+e*e*30);
-  g=ctx.createRadialGradient(cx,cy,0,cx,cy,core);g.addColorStop(0,'rgba(255,255,255,'+(0.75+0.25*e)+')');g.addColorStop(.4,'rgba(255,255,255,'+(0.2+0.6*e)+')');g.addColorStop(1,'rgba(255,255,255,0)');
-  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);};}
+/* ---------- sign-in portal: push into the o of the logo and arrive in the user's own workspace, seen through it ---------- */
+const PORTAL_O={x:-12.3,y:-3.7,win:15};          /* the o's counter in logo units (POPV), and the window disc behind it */
+/* no WebGL: the flat logo turns to face you, and a white page with a hole in the o zooms with it */
+function flatPortal(){const w=$('#spin'),tile=$('#tile');if(!w||!tile)return null;cancelAnimationFrame(SPIN);
+ const b=w.getBoundingClientRect(),fx=0.428,fy=0.534,ox=b.left+b.width*fx,oy=b.top+b.height*fy,r0=b.width*0.07;
+ const ov=document.createElement('div');ov.className='portal-flat';ov.setAttribute('aria-hidden','true');document.body.appendChild(ov);ov.appendChild(w);
+ w.style.left=b.left+'px';w.style.top=b.top+'px';w.style.transformOrigin=(b.width*fx)+'px '+(b.height*fy)+'px';
+ tile.style.transition='transform .35s cubic-bezier(.3,.7,.2,1)';tile.style.transform='none';
+ return {layer:ov,opaque(){ov.style.background='#fff';},
+  step(e){const k=Math.pow(60,e),R=(r0*k).toFixed(1);w.style.transform='scale('+k.toFixed(3)+')';
+   const m='radial-gradient(circle at '+ox+'px '+oy+'px,transparent '+R+'px,#000 '+(+R+1)+'px)';ov.style.webkitMaskImage=ov.style.maskImage=m;return{x:ox,y:oy};},
+  remove(){ov.remove();}};}
 const Portal={busy:false,
  go(u,arrive){
-  const kind=u.role==='broker'?'broker':u.role==='customer'?'customer':'team',R=PORTAL_ROLE[kind];
   Portal.busy=true;clearInterval(CLOCK);CLOCK=null;
-  if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches){stopGL();arrive();Portal.busy=false;return;}
+  const done=()=>{Portal.busy=false;};
+  if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches){stopGL();arrive();done();return;}
   const tc=$('.tc');if(tc)tc.classList.add('leaving');if(document.activeElement)document.activeElement.blur();
-  const gl=!!(GL&&GL.portalStart),step=gl?null:cssPortal();if(gl)GL.portalStart(R.accent);
-  /* 3D: the tunnel lives in the WebGL scene, so only the title and the final flash are overlays; flat: a 2D tunnel shows through the o */
-  const TL=gl?{tagIn:1650,tagOut:2150,flash:2250,land:2520}:{tagIn:850,tagOut:1650,flash:1700,land:1980};
-  const ov=document.createElement('div'),fl=document.createElement('div');ov.className='portal-fx'+(gl?' gl':'');fl.className='portal-flash';ov.setAttribute('aria-hidden','true');fl.setAttribute('aria-hidden','true');
-  ov.innerHTML=(gl?'':'<canvas></canvas>')+'<div class="portal-tag">Welcome'+(kind==='team'?' back':'')+', '+esc(u.name.split(' ')[0])+'<b>'+R.tag+'</b></div>';
-  document.body.append(ov,fl);
-  const draw=gl?null:Tunnel(ov.firstChild,R.accent),tag=ov.lastChild,W=innerWidth,H=innerHeight,T0=performance.now(),ease=x=>x<=0?0:x>=1?1:x*x*(3-2*x);
-  let last=T0,ox=W/2,oy=H/3,orad=0,landed=false;
-  const frame=now=>{const t=now-T0,dt=Math.min(50,now-last);last=now;
-   if(gl){if(GL)GL.portalStep(t);}
-   else{if(step){const o=step(t);if(o){if(o.r<1e4){ox=o.x;oy=o.y;}orad=o.r;}}else orad=Math.hypot(W,H)*ease((t-200)/900);
-    ov.style.opacity=ease((t-100)/300);
-    ov.style.clipPath='circle('+Math.min(orad,Math.hypot(W,H)).toFixed(1)+'px at '+ox.toFixed(1)+'px '+oy.toFixed(1)+'px)';
-    const m=ease((t-900)/700);draw(t,dt,ox+(W/2-ox)*m,oy+(H/2-oy)*m);}
-   tag.style.opacity=ease((t-TL.tagIn)/350)*(1-ease((t-TL.tagOut)/250));tag.style.transform='translateY(-50%) scale('+(0.9+0.1*ease((t-TL.tagIn)/900)).toFixed(3)+')';
-   fl.style.opacity=ease((t-TL.flash)/260);
-   if(t<TL.land){requestAnimationFrame(frame);return;}
-   if(landed)return;landed=true;stopGL();arrive();ov.remove();
-   document.documentElement.classList.add('portal-arrive');fl.style.transition='opacity .5s ease';
-   requestAnimationFrame(()=>{fl.style.opacity=0;});
-   setTimeout(()=>{fl.remove();document.documentElement.classList.remove('portal-arrive');Portal.busy=false;},800);};
+  const gl=!!(GL&&GL.portalStart),flat=gl?null:flatPortal();
+  if(!gl&&!flat){stopGL();arrive();done();return;}
+  if(gl)GL.portalStart();
+  const layer=gl?GL.box:flat.layer,T0=performance.now(),DIVE=1300,FADE=140;let arrived=false,app=null;
+  const frame=now=>{const t=now-T0;
+   /* the form has faded: the canvas now paints the white page and the workspace is rendered underneath it */
+   if(!arrived&&t>=260){arrived=true;if(gl)GL.portalOpaque();else flat.opaque();arrive();app=$('#app');app.classList.add('portal-app');}
+   const d=Math.max(0,Math.min(1,(t-160)/DIVE)),e=Math.pow(d,1.5);
+   const o=gl?(GL?GL.portalStep(t,e):null):flat.step(e);
+   if(app&&o){app.style.transformOrigin=o.x.toFixed(1)+'px '+o.y.toFixed(1)+'px';app.style.transform='scale('+(0.86+0.14*e).toFixed(4)+')';}
+   layer.style.opacity=1-Math.max(0,Math.min(1,(t-160-DIVE+FADE)/FADE));
+   if(d<1){requestAnimationFrame(frame);return;}
+   stopGL();if(flat)flat.remove();if(app){app.classList.remove('portal-app');app.style.transform=app.style.transformOrigin='';}done();};
   requestAnimationFrame(frame);}};
 var LOGIN_ROLE='team';
 const DEMO={team:[['Admin','admin@pop.demo'],['Executive','exec@pop.demo'],['Underwriter','uw@pop.demo'],['Sales','sales@pop.demo'],['Operations','ops@pop.demo'],['Collections','collect@pop.demo']],broker:[['Broker (Atlas Funding Group)','broker@atlas.demo']],customer:[['Customer with active funding','owner@pop.demo'],['Applicant with offers','applicant@pop.demo']]};
