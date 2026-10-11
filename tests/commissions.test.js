@@ -1,0 +1,34 @@
+/* Broker commissions: estimated → earned → approved → paid, with permissions and audit. */
+const { open } = require('./helpers');
+(async () => {
+  const t = await open(); const { page, check } = t;
+  await t.signIn('u1', '#/commissions');
+  const base = await page.evaluate(() => ({ t: Comm.totals(), all: DB.deals.filter(d => d.commission > 0).reduce((s, d) => s + d.commission, 0), h1: document.querySelector('main h1').textContent }));
+  check('admin sees the Commissions page', base.h1 === 'Broker commissions');
+  check('earned + approved + paid equals all funded-deal commissions', base.t.Earned + base.t.Approved + base.t.Paid === base.all, base);
+  check('estimated comes from open offers and is kept separate', base.t.n.Estimated > 0 && base.t.Estimated > 0);
+  const id = await page.evaluate(() => Comm.deals().find(d => Comm.rec(d).status === 'Earned').id), amt = await page.evaluate(i => Store.get('deals', i).commission, id);
+  check('a payout cannot be recorded before approval', await page.evaluate(i => Comm.pay(Store.get('deals', i), todayISO, 'X123') === false, id));
+  await page.click(`button[data-act="commapprove"][data-id="${id}"]`); await t.mact(1);
+  const a1 = await page.evaluate(i => ({ st: Comm.rec(Store.get('deals', i)).status, t: Comm.totals(), audit: DB.audit[0].action }), id);
+  check('approval moves Earned to Approved, shifts totals and is audited', a1.st === 'Approved' && a1.t.Approved === base.t.Approved + amt && a1.audit === 'Approved broker commission', a1.st);
+  check('approving twice is refused', await page.evaluate(i => Comm.approve(Store.get('deals', i)) === false, id));
+  await page.click(`button[data-act="commpay"][data-id="${id}"]`); await page.fill('#cpR', ''); await t.mact(1);
+  check('a payout needs a reference', await page.evaluate(() => /reference/.test(document.getElementById('e-cpR').textContent)));
+  await page.fill('#cpD', '2099-01-01'); await page.fill('#cpR', 'ACH-55821'); await t.mact(1);
+  check('a payout date cannot be in the future', await page.evaluate(() => /between funding/.test(document.getElementById('e-cpD').textContent)));
+  await page.fill('#cpD', await page.evaluate(() => todayISO)); await t.mact(1);
+  const p1 = await page.evaluate(i => ({ c: Comm.rec(Store.get('deals', i)), audit: DB.audit[0].action }), id);
+  check('the payout moves it to Paid with date and reference, audited', p1.c.status === 'Paid' && p1.c.ref === 'ACH-55821' && p1.audit === 'Recorded broker commission payout', p1.c);
+  await page.reload(); await page.waitForTimeout(300);
+  check('state survives a reload', await page.evaluate(i => Comm.rec(Store.get('deals', i)).status === 'Paid', id));
+  await t.signIn('u2', '#/commissions');
+  check('executive can view but has no actions and cannot approve', await page.evaluate(() => document.querySelectorAll('[data-act^="comm"]').length === 0 && Comm.approve(Comm.deals().find(d => Comm.rec(d).status === 'Earned')) === false));
+  await t.signIn('u5', '#/commissions');
+  check('sales cannot open Commissions', await page.evaluate(() => /access/i.test(document.querySelector('main').textContent)));
+  await t.signIn('u9', '#/bcomm');
+  const br = await page.evaluate(() => ({ kpis: [...document.querySelectorAll('.kpi .kl')].map(x => x.textContent).join('|'), own: Comm.deals(App.user.brokerId).every(d => d.brokerId === App.user.brokerId), acts: document.querySelectorAll('[data-act^="comm"]').length }));
+  check('broker sees Estimated, Earned, Approved and Paid separately, own deals only, no admin actions', br.kpis === 'Estimated|Earned|Approved|Paid' && br.own && br.acts === 0, br);
+  check('no uncaught page errors', t.errors.length === 0, t.errors);
+  await t.finish();
+})().catch(e => { console.error(e); process.exit(1); });

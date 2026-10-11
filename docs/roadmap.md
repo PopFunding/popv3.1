@@ -6,15 +6,15 @@ Items are ranked on commercial value, operational efficiency, scalability, risk 
 | Item | Where |
 | --- | --- |
 | Broker commissions in four states: estimated, earned, approved, paid | `Comm`, Relationships → Commissions, broker portal |
-| Record integrity: sequential IDs, funding exactly once, duplicate and channel-conflict checks at intake | `Ids`, `Dup`, `Biz.fund`; tests in `tests/integrity.test.js` |
+| Record integrity: sequential IDs, funding exactly once, duplicate and channel-conflict checks at intake | `Ids`, `Dup`, `Biz.fund`; `tests/integrity.test.js` |
+| Merchant-portal servicing figures labelled as unverified until a payment processor connects (was A4) | `fundingCard`; `tests/portal.test.js` |
+| Pricing versions on offers and deals, plus standard decline reason codes (was A5 and A6, without offer expiry) | `PV`, `DECLINE_REASONS`; `tests/pricing.test.js` |
 
 ## A. Local now (no Supabase needed)
 1. **Provider programs and funding-path matching.** A program registry with explicit criteria, an explanation of each pass or fail on every file, and a flag on criteria not re-confirmed within a set number of days. This is the highest commercial value: it's POP's advantage B. It needs real provider criteria (see D1) before it means anything; demo programs must be labelled as demo.
 2. **Submission tracking per provider.** Record sent, approved, declined (with reason) and response time. This builds the relationship knowledge (advantage C) and later feeds the matching ranking.
 3. **One stage-rule function.** Put the rules for entering each stage in `Biz.move`, and route the pipeline drag, stage menu and bulk actions through it. This means fewer paths and fewer errors.
-4. **Label merchant-portal servicing figures** as demo or unverified, and say "Request a payment". This is honest now and becomes live once D3/C1 land.
-5. **Offer expiry, and the pricing version stored with each offer.**
-6. **Standard decline reason codes.**
+4. **Offer expiry.** This needs POP's validity period, a policy decision.
 
 ## B. Needs live Supabase
 1. Accounts, sessions, and two-step sign-in with Supabase Auth (authenticator codes); invites from the server.

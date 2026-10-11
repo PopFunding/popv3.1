@@ -19,7 +19,7 @@ Working documents for building POP OS into POP Funding's operating system. They 
 ## Tests
 
 ```
-node tests/integrity.test.js
+node tests/run-all.js
 ```
 
-The suite runs the real app in headless Chromium with fictional demo data. It needs Playwright, and you can set `PLAYWRIGHT_MODULE` if Playwright isn't installed locally.
+Each suite (`tests/*.test.js`) runs the real app in headless Chromium with fictional demo data. They need Playwright, and you can set `PLAYWRIGHT_MODULE` if Playwright isn't installed locally. `tests/helpers.js` holds the shared setup.
