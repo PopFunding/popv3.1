@@ -10,10 +10,11 @@ Items are ranked on commercial value, operational efficiency, scalability, risk 
 | Merchant-portal servicing figures labelled as unverified until a payment processor connects (was A4) | `fundingCard`; `tests/portal.test.js` |
 | Pricing versions on offers and deals, plus standard decline reason codes (was A5 and A6, without offer expiry) | `PV`, `DECLINE_REASONS`; `tests/pricing.test.js` |
 | Provider programs with explainable funding-path matching, stale-criteria flags, and submission tracking with outcomes and response time (was A1 and A2). Demo providers are labelled; real criteria still needed (D1) | `Prov`, Relationships → Providers, file → Funding paths; `tests/providers.test.js` |
+| Provider insights: declines of files that met stated criteria (re-confirm signal), approvals outside criteria, top decline reasons, and the rules blocking the most open files | `Prov.insights`, Providers page; `tests/insights.test.js` |
 | One stage-rule table: every path that moves a file (wizard, underwriting, offers, funding, pipeline drag, stage menu, bulk) goes through `Biz.canMove` (was A3) | `STAGE_RULES`; `tests/stages.test.js` |
 
 ## A. Local now (no Supabase needed)
-1. **Provider decline insights.** Group provider decline reasons by program and criterion, so POP sees which rules block the most files and which providers decline outside their stated criteria.
+1. **Provider-funded deals.** Record when a provider funds a file (amount, date, POP's commission or fee) and link it to the submission, without POP holding a payment ledger for it.
 2. **Submission package.** Build each provider's package (application, statements, ID) from the verified documents, with a checklist per program.
 3. **Offer expiry.** This needs POP's validity period, a policy decision.
 

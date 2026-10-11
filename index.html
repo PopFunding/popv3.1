@@ -198,6 +198,7 @@ ol.tl{list-style:none;margin:0;padding:0 0 0 6px}ol.tl li{display:flex;gap:12px;
 .gl3d{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);touch-action:none;cursor:grab;opacity:0;transition:opacity .45s ease}
 .gl3d.on{opacity:1}
 .note{background:#eef3fb;border:1px solid #d6e2f5;border-radius:8px;padding:10px 12px;font-size:.88rem;margin:0 0 14px}
+.insights{margin-top:6px;color:var(--ink-2,#334155);line-height:1.7}
 .path{border-top:1px solid var(--line,#e5e7eb);padding:10px 0}.path summary{cursor:pointer;display:flex;flex-wrap:wrap;gap:6px;align-items:center}.path table{margin:10px 0 6px}.path .pos{color:#067647;font-weight:700}.path .neg{color:#b42318;font-weight:700}
 .fnote{display:flex;gap:8px;align-items:flex-start;margin:0;padding:10px 16px;background:#fffaf0;border-top:1px solid #f2d6a6;border-bottom:1px solid #f2d6a6;color:#7a4a05;font-size:.85rem}.fnote .ic{flex:0 0 auto;width:16px;height:16px;fill:currentColor;margin-top:2px}
 .warnbox{border-color:#f2d6a6;background:#fffaf0}
@@ -1201,6 +1202,12 @@ const Prov={
   return{sent:s.length,approved:ap.length,declined:dec.length-ap.length,open:s.filter(x=>x.status==='Sent').length,rate:dec.length?ap.length/dec.length:null,avgDays:resp.length?resp.reduce((t,x)=>t+daysBetween(x.sentAt,x.respondedAt),0)/resp.length:null};},
  /* ranked funding paths for a file: eligible first, then fewest failing rules, then POP's own approval history with that program */
  rank(a){const f=Prov.facts(a);return Prov.programs().map(({p,g})=>({p,g,r:Prov.check(g,f),h:Prov.stats({programId:g.id})})).sort((x,y)=>(y.r.eligible-x.r.eligible)||(x.r.fails-y.r.fails)||((y.h.rate??-1)-(x.h.rate??-1))||x.p.name.localeCompare(y.p.name));},
+ /* relationship intelligence for one program, from POP's own submissions and today's open files */
+ insights(g){const subs=Prov.subs({programId:g.id}),dec=subs.filter(x=>x.status==='Declined'),ap=subs.filter(x=>x.status==='Approved'),within=x=>!x.override;
+  const reasons={};dec.forEach(x=>{const k=(x.reason||'No reason given').trim().toLowerCase();reasons[k]=reasons[k]||{label:(x.reason||'No reason given').trim(),n:0};reasons[k].n++;});
+  const blocks={};DB.applications.filter(a=>!['Funded','Declined'].includes(a.stage)).forEach(a=>{Prov.check(g,Prov.facts(a)).rules.filter(r=>r.pass===false).forEach(r=>{blocks[r.k]=blocks[r.k]||{label:r.label,n:0};blocks[r.k].n++;});});
+  const top=o=>Object.values(o).sort((a,b)=>b.n-a.n||a.label.localeCompare(b.label)).slice(0,3);
+  return{declinedWithin:dec.filter(within).length,approvedOutside:ap.filter(x=>!within(x)).length,reasons:top(reasons),blocks:top(blocks)};},
  popDirect(a){const m=merch(a.merchantId),rk=Engine.risk(m),tier=rk.tier==='E'?'D':rk.tier,mx=Engine.maxApproval(m,12,'daily',tier);return{tier:rk.tier,max:mx,ok:rk.tier!=='E'&&mx>0};},
  demo(){const t=todayISO,d=n=>addDays(t,-n);return [
   {id:'pv1',name:'Lumen Ridge Capital',contact:'Program desk',email:'programs@lumenridge.demo',active:true,demo:true,programs:[
@@ -1258,7 +1265,8 @@ App.pages.providers=()=>{const ed=canEdit('capital'),ps=DB.providers||[];
   '<p class="muted sm">'+h.sent+' submitted · '+h.approved+' approved · '+h.declined+' declined · '+h.open+' waiting'+(h.rate!=null?' · '+pct(h.rate,0)+' approval rate':'')+(h.avgDays!=null?' · avg response '+h.avgDays.toFixed(1)+' days':'')+'</p>'+
   '<div class="tscroll"><table class="mini"><tr><th>Program</th><th>Criteria</th><th>Confirmed</th><th></th></tr>'+(p.programs||[]).map(g=>{const c=g.criteria||{};
    const txt=CRIT.filter(([k])=>c[k]!=null&&c[k]!=='').map(([k,l,,,fc])=>l.replace(' at least',' ≥').replace(' at most',' ≤')+' '+fc(c[k])).concat((c.products||[]).length?['Products: '+c.products.join(', ')]:[]).concat((c.excludedIndustries||[]).length?['Excludes '+c.excludedIndustries.join(', ')]:[]).concat((c.excludedStates||[]).length?['Not in '+c.excludedStates.join(', ')]:[]);
-   return '<tr><td><b>'+esc(g.name)+'</b></td><td class="sm" style="white-space:normal;min-width:280px">'+txt.map(esc).join(' · ')+'</td><td>'+(g.confirmedAt?fdate(g.confirmedAt):'Never')+(Prov.stale(g)?' <span class="pill warn">Re-confirm</span>':'')+'</td><td>'+(ed?'<button class="btn sm" data-act="provconfirm" data-g="'+g.id+'">Confirm</button> <button class="btn sm" data-act="provedit" data-g="'+g.id+'">Edit</button>':'')+'</td></tr>';}).join('')+'</table></div></section>';}).join('');};
+   const ins=Prov.insights(g),notes=[].concat(ins.declinedWithin?['<span class="pill warn">Declined '+ins.declinedWithin+' file'+(ins.declinedWithin>1?'s':'')+' that met its stated criteria · re-confirm with the provider</span>']:[]).concat(ins.approvedOutside?['<span class="pill info">Approved '+ins.approvedOutside+' outside its stated criteria</span>']:[]).concat(ins.reasons.length?['Top decline reasons: '+ins.reasons.map(r=>esc(r.label)+' ('+r.n+')').join(', ')]:[]).concat(ins.blocks.length?['Open files blocked by: '+ins.blocks.map(r=>esc(r.label)+' ('+r.n+')').join(', ')]:[]);
+   return '<tr><td><b>'+esc(g.name)+'</b></td><td class="sm" style="white-space:normal;min-width:280px">'+txt.map(esc).join(' · ')+(notes.length?'<div class="insights">'+notes.join('<br>')+'</div>':'')+'</td><td>'+(g.confirmedAt?fdate(g.confirmedAt):'Never')+(Prov.stale(g)?' <span class="pill warn">Re-confirm</span>':'')+'</td><td>'+(ed?'<button class="btn sm" data-act="provconfirm" data-g="'+g.id+'">Confirm</button> <button class="btn sm" data-act="provedit" data-g="'+g.id+'">Edit</button>':'')+'</td></tr>';}).join('')+'</table></div></section>';}).join('');};
 
 /* ---------- broker commissions: estimated (open offer) → earned (deal funded) → approved (POP review) → paid (payout recorded) ----------
    Payout rules (schedule, clawback on early default, who may approve vs pay) are POP policy decisions that are not set yet,
