@@ -573,15 +573,26 @@ const pvLabel=o=>o.pv==='manual'?'Manual factor':o.pv?'Pricing v'+o.pv:'Pricing 
 /* standard decline reasons (codes are stable for reporting; labels can be reworded) */
 const DECLINE_REASONS=[['REV','Insufficient revenue'],['POS','Too many positions'],['NSF','High NSF activity'],['IND','Industry restriction'],['DOC','Incomplete documents'],['OTH','Other']];
 const declineCode=label=>(DECLINE_REASONS.find(r=>r[1]===label)||['OTH'])[0];
+/* what must be true before a file can enter a stage ('' = allowed). Stages not listed need nothing extra. */
+const STAGE_RULES={
+ Approved:a=>a.uw&&a.uw.decision==='Approved'?'':'record an approved underwriting decision first',
+ 'Offer Sent':a=>(a.offers||[]).some(o=>['Sent','Accepted'].includes(o.status))?'':'record offers as sent first',
+ Contract:a=>a.selectedOffer&&(a.offers||[]).some(o=>o.id===a.selectedOffer)?'':'the merchant has to accept an offer first',
+ Funded:a=>a.dealId?'':'fund it from the Funding screen (checklist required)',
+ Declined:a=>a.decline||a.declineReason?'':'choose a decline reason first'};
 const Biz={
  risk:a=>Engine.risk(merch(a.merchantId)),
  completion(a){const done=Object.keys(a.steps||{}).filter(k=>a.steps[k]).length;return Math.min(1,(done+(STAGES.indexOf(a.stage)>=STAGES.indexOf('Approved')&&a.stage!=='Declined'?3:0))/10);},
- move(a,stage,why){if(!a||a.stage===stage)return;if(a.review&&a.review.status==='Open'&&stage!=='Declined'&&STAGES.indexOf(stage)>STAGES.indexOf('Documents')){UI.toast(a.id+': resolve the duplicate review first','error');return false;}const prev=a.stage;a.stage=stage;a.stageSince=todayISO;Store.audit('Changed application status',a.id+' · '+merch(a.merchantId).dba,prev,stage);
+ /* the one place a file changes stage: every path (wizard, underwriting, offers, funding, pipeline drag, stage menu, bulk) goes through here */
+ canMove(a,stage){if(!STAGES.includes(stage))return 'Unknown stage';if(a.stage==='Funded')return 'A funded file stays funded; its deal carries on in servicing';
+  if(a.review&&a.review.status==='Open'&&stage!=='Declined'&&STAGES.indexOf(stage)>STAGES.indexOf('Documents'))return 'resolve the duplicate review first';
+  const r=STAGE_RULES[stage];return r?r(a):'';},
+ move(a,stage,why){if(!a||a.stage===stage)return;const no=Biz.canMove(a,stage);if(no){UI.toast(a.id+': '+no,'error');return false;}const prev=a.stage;a.stage=stage;a.stageSince=todayISO;Store.audit('Changed application status',a.id+' · '+merch(a.merchantId).dba,prev,stage);
   Store.event(a.merchantId,'application',a.id+': '+prev+' → '+stage+(why?' ('+why+')':''));
   const m=merch(a.merchantId);if(stage==='Declined'&&m.status!=='Funded')m.status='Declined';else if(!['Funded','Declined'].includes(stage)&&m.status!=='Funded')m.status='In Process';
   if(stage==='Underwriting')Store.notify(m.dba+' is ready for underwriting','#/uw/'+a.id);
   if(stage==='Contract'&&!a.funding.status)a.funding={status:'Approved',checks:{},capitalId:null};
-  Store.save();},
+  Store.save();return true;},
  nextTask(merchantId){return DB.tasks.filter(t=>t.merchantId===merchantId&&t.status!=='Done').sort((a,b)=>a.due<b.due?-1:1)[0];},
  leadScore(l){let s=0;s+=l.revenue>=250000?35:l.revenue>=100000?28:l.revenue>=50000?20:l.revenue>=25000?12:4;s+=l.tib>=60?20:l.tib>=24?14:l.tib>=12?8:2;
   s+={Referral:18,Renewal:20,Broker:14,Website:12,'Paid search':10,'Cold call':6}[l.source]||8;s+=(INDUSTRY[l.industry]==='L'?12:INDUSTRY[l.industry]==='M'?8:3);
@@ -756,7 +767,7 @@ Object.assign(App.acts,{
 document.addEventListener('change',e=>{const t=e.target,d=t.dataset;
  if(d.of){const a=Store.get('applications',d.of),o=a.offers.find(x=>x.id===d.o);const v=d.k==='freq'?t.value:d.k==='term'?+t.value:num(t.value);if(d.k==='factor'&&!(v>=1&&v<3)){UI.toast('Factor must be between 1.00 and 3.00','error');App.render();return;}
   if(d.k==='term'){const rk=Biz.risk(a);o.factor=Engine.factor(rk.tier==='E'?'D':rk.tier,v);o.pv=PV();}if(d.k==='factor')o.pv='manual';const pv=o[d.k];o[d.k]=v;Store.audit('Changed offer '+d.k,a.id+' '+o.label,pv,v);Store.save();App.render();}
- if(t.dataset.actChange==='stage'){const a=Store.get('applications',d.id);if(t.value==='Funded'){UI.toast('Use the Funding screen to fund (checks required)','error');App.render();return;}if(t.value==='Declined'){location.hash='#/app/'+a.id+'/8';UI.toast('Choose a decline reason');return;}Biz.move(a,t.value);UI.toast('Stage: '+t.value);App.render();}
+ if(t.dataset.actChange==='stage'){const a=Store.get('applications',d.id);if(t.value==='Funded'){UI.toast('Use the Funding screen to fund (checks required)','error');App.render();return;}if(t.value==='Declined'){location.hash='#/app/'+a.id+'/8';UI.toast('Choose a decline reason');return;}if(Biz.move(a,t.value)!==false)UI.toast('Stage: '+t.value);App.render();}
  if(d.upApp&&t.files.length){const a=Store.get('applications',d.upApp);Docs.upload(t.files,a.merchantId,a.id,d.type);App.render();}
 });
 
@@ -772,7 +783,7 @@ document.addEventListener('dragover',e=>{const c=e.target.closest&&e.target.clos
 document.addEventListener('dragleave',e=>{const c=e.target.closest&&e.target.closest('.kcol');if(c)c.classList.remove('over');});
 document.addEventListener('drop',e=>{const c=e.target.closest&&e.target.closest('.kcol');if(!c)return;e.preventDefault();c.classList.remove('over');pipeMove(e.dataTransfer.getData('text/plain'),c.dataset.stage);});
 document.addEventListener('change',e=>{if(e.target.dataset.move)pipeMove(e.target.dataset.move,e.target.value);});
-function pipeMove(id,stage){const a=Store.get('applications',id);if(!a||a.stage===stage)return;if(stage==='Funded'){UI.toast('Funding requires the checklist: opening Funding','error');location.hash='#/fund/'+a.id;return;}if(stage==='Declined'){location.hash='#/app/'+a.id+'/8';UI.toast('Choose a decline reason');return;}Biz.move(a,stage);UI.toast(merch(a.merchantId).dba+' → '+stage);App.render();}
+function pipeMove(id,stage){const a=Store.get('applications',id);if(!a||a.stage===stage)return;if(stage==='Funded'){UI.toast('Funding requires the checklist: opening Funding','error');location.hash='#/fund/'+a.id;return;}if(stage==='Declined'){location.hash='#/app/'+a.id+'/8';UI.toast('Choose a decline reason');return;}if(Biz.move(a,stage)!==false)UI.toast(merch(a.merchantId).dba+' → '+stage);App.render();}
 
 /* ---------- underwriting ---------- */
 App.pages.uw=()=>UI.head([['Origination'],['Underwriting']],'Underwriting queue','','Applications in Documents and Underwriting, highest risk score first.')+
