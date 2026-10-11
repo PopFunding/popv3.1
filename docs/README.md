@@ -8,6 +8,7 @@ Working documents for building POP OS into POP Funding's operating system. They 
 | [Gap analysis](gap-analysis.md) | What POP OS (this repo's `index.html`) actually does today, stage by stage |
 | [POP operating model](pop-operating-model.md) | POP's own target workflow, built around multi-provider capital |
 | [Roadmap](roadmap.md) | What to build next, staged by what each item depends on |
+| [Overnight log](overnight-log.md) | What changed on 2026-10-10/11, defaults to confirm, decisions needed |
 
 ## Ground rules
 
