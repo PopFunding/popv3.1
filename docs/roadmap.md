@@ -9,11 +9,12 @@ Items are ranked on commercial value, operational efficiency, scalability, risk 
 | Record integrity: sequential IDs, funding exactly once, duplicate and channel-conflict checks at intake | `Ids`, `Dup`, `Biz.fund`; `tests/integrity.test.js` |
 | Merchant-portal servicing figures labelled as unverified until a payment processor connects (was A4) | `fundingCard`; `tests/portal.test.js` |
 | Pricing versions on offers and deals, plus standard decline reason codes (was A5 and A6, without offer expiry) | `PV`, `DECLINE_REASONS`; `tests/pricing.test.js` |
+| Provider programs with explainable funding-path matching, stale-criteria flags, and submission tracking with outcomes and response time (was A1 and A2). Demo providers are labelled; real criteria still needed (D1) | `Prov`, Relationships → Providers, file → Funding paths; `tests/providers.test.js` |
 | One stage-rule table: every path that moves a file (wizard, underwriting, offers, funding, pipeline drag, stage menu, bulk) goes through `Biz.canMove` (was A3) | `STAGE_RULES`; `tests/stages.test.js` |
 
 ## A. Local now (no Supabase needed)
-1. **Provider programs and funding-path matching.** A program registry with explicit criteria, an explanation of each pass or fail on every file, and a flag on criteria not re-confirmed within a set number of days. This is the highest commercial value: it's POP's advantage B. It needs real provider criteria (see D1) before it means anything; demo programs must be labelled as demo.
-2. **Submission tracking per provider.** Record sent, approved, declined (with reason) and response time. This builds the relationship knowledge (advantage C) and later feeds the matching ranking.
+1. **Provider decline insights.** Group provider decline reasons by program and criterion, so POP sees which rules block the most files and which providers decline outside their stated criteria.
+2. **Submission package.** Build each provider's package (application, statements, ID) from the verified documents, with a checklist per program.
 3. **Offer expiry.** This needs POP's validity period, a policy decision.
 
 ## B. Needs live Supabase
@@ -39,6 +40,6 @@ Items are ranked on commercial value, operational efficiency, scalability, risk 
 6. **Calibrating the risk engine** against real outcomes before relying on it.
 
 ## Next three recommendations
-1. **Get verified criteria for POP's first two or three provider programs (D1), then build A1 and A2 on them.** That turns POP's main advantage from a design into a working tool, and it can be tested locally.
+1. **Replace the demo providers with POP's real programs and their verified criteria (D1).** Matching and submission tracking are built; they only become useful with real criteria.
 2. **Stand up Supabase (B1–B3) before any real merchant data enters the system.** The current browser storage is fine for demos and unsafe for real records.
 3. **Decide commission policy and credit authority (D2, D3).** Both are already modelled in the code; the open decisions are the only thing keeping them from being complete.
