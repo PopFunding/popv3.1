@@ -11,6 +11,7 @@ Items are ranked on commercial value, operational efficiency, scalability, risk 
 | Pricing versions on offers and deals, plus standard decline reason codes (was A5 and A6, without offer expiry) | `PV`, `DECLINE_REASONS`; `tests/pricing.test.js` |
 | Provider programs with explainable funding-path matching, stale-criteria flags, and submission tracking with outcomes and response time (was A1 and A2). Demo providers are labelled; real criteria still needed (D1) | `Prov`, Relationships → Providers, file → Funding paths; `tests/providers.test.js` |
 | Provider insights: declines of files that met stated criteria (re-confirm signal), approvals outside criteria, top decline reasons, and the rules blocking the most open files | `Prov.insights`, Providers page; `tests/insights.test.js` |
+| Review fixes: funding and offer acceptance require underwriting approval; nothing proceeds under duplicate review; declined files reopen only for review; internal decline notes hidden from brokers; pre-tracking commissions confirmed one by one, defaulted ones on hold | `uwOk`, `Biz.fundBlock`, `Comm.legacy`; `tests/review-fixes.test.js` |
 | One stage-rule table: every path that moves a file (wizard, underwriting, offers, funding, pipeline drag, stage menu, bulk) goes through `Biz.canMove` (was A3) | `STAGE_RULES`; `tests/stages.test.js` |
 
 ## A. Local now (no Supabase needed)
@@ -34,7 +35,7 @@ Items are ranked on commercial value, operational efficiency, scalability, risk 
 
 ## D. Needs founder, underwriting, capital or legal decisions
 1. **Verified provider program criteria,** and who confirms them, and how often.
-2. **Commission policy:** payout schedule, clawback, and separation of approver and payer.
+2. **Commission policy:** payout schedule, clawback (commissions on deals in default are on hold until it's set), separation of approver and payer, and confirming each commission recorded before tracking began.
 3. **Credit authority:** delegated approval limits, second-review thresholds, and dual control on funding.
 4. **One open file per merchant**, or exceptions (currently an editor can override with a reason).
 5. **Disclosures** (state commercial-finance laws), adverse-action practice, collections and hardship policy.
