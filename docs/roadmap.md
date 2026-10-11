@@ -12,6 +12,7 @@ Items are ranked on commercial value, operational efficiency, scalability, risk 
 | Provider programs with explainable funding-path matching, stale-criteria flags, and submission tracking with outcomes and response time (was A1 and A2). Demo providers are labelled; real criteria still needed (D1) | `Prov`, Relationships → Providers, file → Funding paths; `tests/providers.test.js` |
 | Provider insights: declines of files that met stated criteria (re-confirm signal), approvals outside criteria, top decline reasons, and the rules blocking the most open files | `Prov.insights`, Providers page; `tests/insights.test.js` |
 | Review fixes: funding and offer acceptance require underwriting approval; nothing proceeds under duplicate review; declined files reopen only for review; internal decline notes hidden from brokers; pre-tracking commissions confirmed one by one, defaulted ones on hold | `uwOk`, `Biz.fundBlock`, `Comm.legacy`; `tests/review-fixes.test.js` |
+| Next best actions: one deterministic next step per open file (duplicate review, funding checklist, provider chase, offers, underwriting, documents, stalled files), most urgent first, scoped by role, with day thresholds in Settings | `Next`, dashboard panel and Overview → Next best actions; `tests/next.test.js` |
 | One stage-rule table: every path that moves a file (wizard, underwriting, offers, funding, pipeline drag, stage menu, bulk) goes through `Biz.canMove` (was A3) | `STAGE_RULES`; `tests/stages.test.js` |
 
 ## A. Local now (no Supabase needed)
